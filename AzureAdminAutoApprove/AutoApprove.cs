@@ -35,17 +35,18 @@ namespace AzureAdminAutoApprove
         */
 
         [FunctionName("ApprovePendingRequestsByTimer")]
-        public static async Task Run([TimerTrigger("0 */1 * * * *")] TimerInfo myTimer, ILogger log)
+        public static async Task Run([TimerTrigger("0 */1 * * * *")]
+            TimerInfo myTimer,
+            ILogger log)
         {
             log.LogInformation($"ApprovePendingRequestsByTimer trigger executed at: {DateTime.Now}");
 
             await ApproveUtils.ApprovePendingDevices(log);
         }
 
-
         [FunctionName("ApprovePendingRequestsByWebHook")]
         public static async Task<IActionResult> RunApprovePendingRequests(
-            [HttpTrigger(AuthorizationLevel.Function, "GET", Route = null)]
+            [HttpTrigger(AuthorizationLevel.Function, "get", Route = null)]
             HttpRequest req,
             ILogger log)
         {
@@ -63,7 +64,7 @@ namespace AzureAdminAutoApprove
             }
         }
 
-        [FunctionName("AdminLoginConfiguration")]
+        [FunctionName("KeeperLoginConfiguration")]
         public static async Task<IActionResult> RunStoreLoginConfiguration(
             [HttpTrigger(AuthorizationLevel.Admin, "GET", "POST", Route = null)]
             HttpRequest req,
@@ -109,10 +110,10 @@ namespace AzureAdminAutoApprove
                 if (!File.Exists(fileName))
                 {
                     log.LogDebug("Keeper Configuration is not loaded yet.");
-                    return new ObjectResult("Keeper Configuration is not loaded yet") { StatusCode = StatusCodes.Status404NotFound };
+                    return new ObjectResult("Keeper Configuration is not loaded yet") {StatusCode = StatusCodes.Status404NotFound};
                 }
 
-                
+
                 var configBody = await File.ReadAllBytesAsync(fileName);
 
                 return new FileContentResult(configBody, "application/json");

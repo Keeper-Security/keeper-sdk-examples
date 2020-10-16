@@ -30,17 +30,18 @@
  4. Provision Keeper configuration for persistent login: 
     - `this-device register`
     - `this-device persistent_login on`
+    - `this-device timeout 2880`   session timeout to 2 days
 5. Ensure this configuration supports persistent login
     - Close Commander `q`. Do not run `logout` command
     - Start Commander.exe. You should be able to login with no input.
     
-Use `AdminLoginConfiguration` function to upload Keeper configuration
+Use `KeeperLoginConfiguration` function to upload Keeper configuration
 This is `HTTP trigger` function that supports GET and POST methods. 
 * GET returns the current Keeper configuration
 * POST uploads the new one
 This function requires admin level authorization.
 
-`curl -d @config.json <AdminLoginConfiguration URL for administrator>` 
+`curl -d @config.json <KeeperLoginConfiguration URL for administrator>` 
 
 It returns `Success` if configuration is accepted.
 
