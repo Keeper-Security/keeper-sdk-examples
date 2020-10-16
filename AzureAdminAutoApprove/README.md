@@ -4,7 +4,7 @@
  It uses [Keeper SDK .Net](https://github.com/Keeper-Security/keeper-sdk-dotnet-private) to work with Keeper.
 
 
- Approval can be triggered by 
+ Approval can be started by 
 
  * timer (Timer Trigger)
  * web-hook  (HTTP Trigger)
@@ -20,6 +20,7 @@
  [Quickstart guide to Azure Functions developpment](https://docs.microsoft.com/en-us/azure/azure-functions/functions-create-your-first-function-visual-studio)
 
  Once this project is successfully deployed to the Azure Cloud we need to upload Keeper configuration prepared for [persistent login](https://keeper.atlassian.net/wiki/spaces/KA/pages/903250019/V3+Login+Process)
+ 
  Use [.Net Commander](https://github.com/Keeper-Security/keeper-sdk-dotnet-private/tree/master/Commander) to create Keeper configuration.
 
  1. Create empty JSON configuration file. file name `config.json` content `{}`
@@ -35,9 +36,11 @@
     
 Use `AdminLoginConfiguration` function to upload Keeper configuration
 This is `HTTP trigger` function that supports GET and POST methods. 
-GET returns the current Keeper configuration
-POST uploads the new one
-This function required admin level authorization.
+* GET returns the current Keeper configuration
+* POST uploads the new one
+This function requires admin level authorization.
+
 `curl -d @config.json <AdminLoginConfiguration URL for administrator>` 
-It returns "Success" if configuration is accepted.
+
+It returns `Success` if configuration is accepted.
 
