@@ -1,4 +1,4 @@
-# Auto Approve Admin Approval requests for SSO user's datakey 
+# Azure Function for SSO Connect Cloud Automated Device Approvals
 
 This project implements [Azure Functions](https://azure.microsoft.com/en-us/services/functions/) that automatically approves all Keeper SSO Connect Cloud Admin Approval requests for users. It uses the [Keeper SDK .Net](https://github.com/Keeper-Security/keeper-sdk-dotnet-private) to communicate with the Keeper backend API.
 
