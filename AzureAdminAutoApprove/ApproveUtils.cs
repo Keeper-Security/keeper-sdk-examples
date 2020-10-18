@@ -9,7 +9,6 @@ using Enterprise;
 using Google.Protobuf;
 using KeeperSecurity.Sdk;
 using KeeperSecurity.Sdk.UI;
-using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Crypto.Parameters;
 
 namespace AzureAdminAutoApprove
@@ -28,12 +27,18 @@ namespace AzureAdminAutoApprove
 
         public static string GetHomeFolder()
         {
-            return Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".keeper");
+            var path = Path.Combine(Environment.GetEnvironmentVariable("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), ".keeper");
+            if (!Directory.Exists(path))
+            {
+                Directory.CreateDirectory(path);
+            }
+
+            return path;
         }
 
         public static string GetKeeperConfigurationFilePath()
         {
-            return Path.Combine(GetHomeFolder(), "azure.json");
+            return Path.Combine(GetHomeFolder(), "config.json");
         }
 
         private static readonly SemaphoreSlim Semaphore = new SemaphoreSlim(1);
@@ -41,6 +46,7 @@ namespace AzureAdminAutoApprove
         private static bool NotificationCallback(NotificationEvent evt)
         {
             if (string.Compare(evt.Event, "request_device_admin_approval", StringComparison.InvariantCultureIgnoreCase) != 0) return false;
+            Errors.Add("Received admin approval request");
             Task.Run(async () =>
             {
                 try
@@ -55,15 +61,18 @@ namespace AzureAdminAutoApprove
             return false;
         }
 
-        private static readonly ConcurrentBag<string> Errors = new ConcurrentBag<string>();
-        private static async Task ExecuteDeviceApprove()
+        public static readonly ConcurrentBag<string> Errors = new ConcurrentBag<string>();
+        public static async Task ExecuteDeviceApprove()
         {
             Auth auth;
             if (!await Semaphore.WaitAsync(TimeSpan.FromSeconds(10))) throw new Exception("Timed out");
             try
             {
                 auth = _auth;
-                if (auth == null) return;
+                if (auth == null || !auth.IsAuthenticated())
+                {
+                    Errors.Add("Not connected to Keeper");
+                }
             }
             finally
             {
@@ -129,44 +138,26 @@ namespace AzureAdminAutoApprove
                 {
                     Errors.Add($"Data key approval failed: {deviceRs.EnterpriseUserId}: {deviceRs.Message}");
                 }
+                else
+                {
+                    Errors.Add($"Successfully approved: {deviceRs.EnterpriseUserId}");
+                }
             }
         }
 
-        public static async Task ApprovePendingDevices(ILogger log)
+        public static async Task ApprovePendingDevices()
         {
             if (!await Semaphore.WaitAsync(TimeSpan.FromSeconds(10))) throw new Exception("Timed out");
             try
             {
-                while (!Errors.IsEmpty)
-                {
-                    if (Errors.TryTake(out var message))
-                    {
-                        log.LogDebug(message);
-                    }
-                    else
-                    {
-                        break;
-                    }
-                }
-
                 if (_auth != null)
                 {
                     if (_auth.IsAuthenticated())
                     {
-                        log.LogDebug("Exit: Already running.");
-                        return;
+                        _auth.AuthContext.PushNotifications.Shutdown();
                     }
-                    else
-                    {
-                        try
-                        {
-                            await _auth.Logout();
-                        }
-                        catch (Exception ee)
-                        {
-                            log.LogDebug($"Logout error: {ee.Message}");
-                        }
-                    }
+
+                    _auth = null;
                 }
 
                 var configPath = GetKeeperConfigurationFilePath();
@@ -186,7 +177,6 @@ namespace AzureAdminAutoApprove
                 var rs = await _auth.ExecuteAuthCommand<EnterpriseDataCommand, EnterpriseDataResponse>(keysRq);
                 if (string.IsNullOrEmpty(rs.Keys?.EccEncryptedPrivateKey))
                 {
-                    log.LogError("Enterprise does not have EC key pair");
                     throw new Exception("Enterprise does not have EC key pair");
                 }
 
@@ -219,31 +209,10 @@ namespace AzureAdminAutoApprove
             }
             catch (Exception e)
             {
-                log.LogDebug($"Device approve error: {e.Message}");
+               Errors.Add($"Device approve error: {e.Message}");
             }
 
         }
-    }
-
-    internal class InMemoryJsonConfiguration : IJsonConfigurationLoader
-    {
-        private byte[] _configuration;
-        public InMemoryJsonConfiguration(byte[] configuration)
-        {
-            _configuration = configuration;
-        }
-
-        public byte[] LoadJson()
-        {
-            return _configuration;
-        }
-
-        public void StoreJson(byte[] json)
-        {
-            _configuration = json;
-        }
-
-        public byte[] Configuration => _configuration;
     }
 
     internal class AuthUiNoAction : IAuthUI
