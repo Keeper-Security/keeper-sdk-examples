@@ -242,7 +242,7 @@ namespace AzureAdminAutoApprove
 
                     var userKeys = new Dictionary<string, byte[]>(StringComparer.InvariantCultureIgnoreCase);
                     var emails = usersToApprove
-                        .Select(x => userLookup[x])
+                        .Select(x => userLookup.TryGetValue(x, out var u) ? u : null )
                         .Where(x => x != null)
                         .Select(x => x.Username)
                         .Take(99)
@@ -266,14 +266,13 @@ namespace AzureAdminAutoApprove
                     var commands = new List<TeamEnterpriseUserAddCommand>();
                     foreach (var qtu in userRs.QueuedTeamUsers.Where(x => x.Users != null))
                     {
-                        var teamKey = teamKeys[qtu.TeamUid];
+                        if (!teamKeys.TryGetValue(qtu.TeamUid, out var teamKey)) continue;
                         if (teamKey == null) continue;
 
                         foreach (var userId in qtu.Users)
                         {
-                            var user = userLookup[userId];
-                            if (user == null) continue;
-                            var pk = userKeys[user.Username];
+                            if (!userLookup.TryGetValue(userId, out var user)) continue;
+                            if (!userKeys.TryGetValue(user.Username, out var pk)) continue;
                             if (pk == null) continue;
 
                             try
