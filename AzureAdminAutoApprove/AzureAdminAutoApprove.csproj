@@ -4,8 +4,8 @@
     <AzureFunctionsVersion>v3</AzureFunctionsVersion>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Keeper.Sdk" Version="0.9.7-beta32" />
-    <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="3.0.7" />
+    <PackageReference Include="Keeper.Sdk" Version="0.9.7-beta33" />
+    <PackageReference Include="Microsoft.NET.Sdk.Functions" Version="3.0.9" />
   </ItemGroup>
   <ItemGroup>
     <None Update="host.json">

@@ -26,49 +26,48 @@ namespace AzureAdminAutoApprove
             return Task.FromResult<IActionResult>(new OkResult());
         }
         */
-
         [FunctionName("ApprovePendingRequestsByTimer")]
-        public static async Task Run([TimerTrigger("0 */1 * * * *")]
-            TimerInfo myTimer,
-            ILogger log)
+        public static async Task RunApprovePendingRequests([TimerTrigger("0 */1 * * * *")] TimerInfo myTimer, ILogger log)
         {
             log.LogInformation($"ApprovePendingRequestsByTimer trigger executed at: {DateTime.Now}");
 
-            await ApproveUtils.ApprovePendingDevices();
+            var auth = await ApproveUtils.ConnectToKeeper(log, true);
+            auth.AuthContext.PushNotifications.RegisterCallback(ApproveUtils.NotificationCallback);
+            await ApproveUtils.ExecuteDeviceApprove(auth);
+
             await Task.Delay(TimeSpan.FromSeconds(30));
         }
 
-        [FunctionName("ApprovePendingRequestsByWebHook")]
-        public static async Task<IActionResult> RunApprovePendingRequests(
+        [FunctionName("ApproveQueuedTeamsByTimer")]
+        public static async Task RunApproveQueuedTeams([TimerTrigger("0 */10 * * * *")] TimerInfo myTimer, ILogger log)
+        {
+            log.LogInformation($"ApproveQueuedTeamsByTimer trigger executed at: {DateTime.Now}");
+
+            var auth = await ApproveUtils.ConnectToKeeper(log, false);
+            await ApproveUtils.ExecuteTeamApprove(auth);
+        }
+
+        [FunctionName("DumpPendingMessages")]
+        public static Task<IActionResult> RunDumpPendingMessages(
             [HttpTrigger(AuthorizationLevel.Function, "get", Route = null)]
             HttpRequest req,
             ILogger log)
         {
             log.LogInformation("HTTP trigger: ApprovePendingRequests.");
 
-            try
+            while (!ApproveUtils.Errors.IsEmpty)
             {
-                await ApproveUtils.ExecuteDeviceApprove();
-
-                while (!ApproveUtils.Errors.IsEmpty)
+                if (ApproveUtils.Errors.TryTake(out var message))
                 {
-                    if (ApproveUtils.Errors.TryTake(out var message))
-                    {
-                        log.LogInformation(message);
-                    }
-                    else
-                    {
-                        break;
-                    }
+                    log.LogInformation(message);
                 }
+                else
+                {
+                    break;
+                }
+            }
 
-                return new OkObjectResult("Success");
-            }
-            catch (Exception e)
-            {
-                log.LogInformation(e.Message);
-                return new ObjectResult(e.Message) {StatusCode = StatusCodes.Status400BadRequest};
-            }
+            return Task.FromResult<IActionResult>( new OkObjectResult("Success"));
         }
     }
 }

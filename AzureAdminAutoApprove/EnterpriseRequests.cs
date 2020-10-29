@@ -122,6 +122,32 @@ namespace AzureAdminAutoApprove
     }
 
     [DataContract]
+    public class EnterpriseQueuedTeam : IEncryptedData
+    {
+        [DataMember(Name = "team_uid")]
+        public string TeamUid { get; set; }
+
+        [DataMember(Name = "name")]
+        public string Name { get; set; }
+
+        [DataMember(Name = "node_id")]
+        public long NodeId { get; set; }
+
+        [DataMember(Name = "encrypted_data")]
+        public string EncryptedData { get; set; }
+    }
+
+    [DataContract]
+    public class EnterpriseQueuedTeamUser
+    {
+        [DataMember(Name = "team_uid")]
+        public string TeamUid { get; set; }
+
+        [DataMember(Name = "users")]
+        public ICollection<long> Users { get; set; }
+    }
+
+    [DataContract]
     public class EnterpriseUser : IEncryptedData, IDisplayName
     {
         [DataMember(Name = "enterprise_user_id")]
@@ -217,6 +243,12 @@ namespace AzureAdminAutoApprove
         [DataMember(Name = "team_users")]
         public ICollection<EnterpriseTeamUser> TeamUsers { get; set; }
 
+        [DataMember(Name = "queued_teams")]
+        public ICollection<EnterpriseQueuedTeam> QueuedTeams { get; set; }
+
+        [DataMember(Name = "queued_team_users")]
+        public ICollection<EnterpriseQueuedTeamUser> QueuedTeamUsers { get; set; }
+
         [DataMember(Name = "users")]
         public ICollection<EnterpriseUser> Users { get; set; }
 
@@ -267,4 +299,146 @@ namespace AzureAdminAutoApprove
         [DataMember(Name = "transfer_key")]
         public string TransferKey { get; set; }
     }
+
+    [DataContract]
+    public class TeamAddCommand : AuthenticatedCommand
+    {
+        public TeamAddCommand(): base("team_add")
+        {
+        }
+
+        [DataMember(Name = "team_uid")]
+        public string TeamUid { get; set; }
+
+        [DataMember(Name = "team_name")]
+        public string TeamName { get; set; }
+
+        [DataMember(Name = "restrict_share")]
+        public bool RestrictShare { get; set; }
+
+        [DataMember(Name = "restrict_edit")]
+        public bool RestrictEdit { get; set; }
+
+        [DataMember(Name = "restrict_view")]
+        public bool RestrictView { get; set; }
+
+        [DataMember(Name = "public_key", EmitDefaultValue = false)]
+        public string PublicKey { get; set; }
+
+        [DataMember(Name = "private_key", EmitDefaultValue = false)]
+        public string PrivateKey { get; set; }
+
+        [DataMember(Name = "node_id", EmitDefaultValue = false)]
+        public long? NodeId { get; set; }
+
+        [DataMember(Name = "team_key", EmitDefaultValue = false)]
+        public string TeamKey { get; set; }
+
+        [DataMember(Name = "manage_only", EmitDefaultValue = false)]
+        public bool ManageOnly { get; set; }
+
+        [DataMember(Name = "encrypted_team_key")]
+        public string EncryptedTeamKey { get; set; }
+    }
+
+    [DataContract]
+    public class ExecuteCommand : AuthenticatedCommand
+    {
+        public ExecuteCommand() : base("execute") { }
+
+        [DataMember(Name = "requests", EmitDefaultValue = false)]
+        public ICollection<KeeperApiCommand> Requests { get; set; }
+    }
+
+    [DataContract]
+    public class ExecuteResponse : KeeperApiResponse
+    {
+        [DataMember(Name = "results")]
+        public IList<KeeperApiResponse> Results { get; set; }
+    }
+
+    [DataContract]
+    public class TeamGetKeysCommand : AuthenticatedCommand
+    {
+        public TeamGetKeysCommand() : base("team_get_keys") { }
+
+        [DataMember(Name = "teams", EmitDefaultValue = false)]
+        public string[] teams;
+    }
+
+    [DataContract]
+    public class TeamKey
+    {
+        [DataMember(Name = "team_uid")]
+        public string TeamUID { get; set; }
+
+        [DataMember(Name = "key")]
+        public string Key { get; set; }
+
+        [DataMember(Name = "type")]
+        public int KeyType { get; set; }
+
+        [DataMember(Name = "result_code")]
+        public string resultCode { get; set; }
+    }
+
+    [DataContract]
+    public class TeamGetKeysResponse : KeeperApiResponse
+    {
+        [DataMember(Name = "keys")]
+        public TeamKey[] TeamKeys { get; set; }
+    }
+
+    [DataContract]
+    public class UserPublicKey
+    {
+        [DataMember(Name = "key_owner")]
+        public string UserName { get; set; }
+
+        [DataMember(Name = "public_key")]
+        public string PublicKey { get; set; }
+
+        [DataMember(Name = "result_code")]
+        public string resultCode;
+
+        [DataMember(Name = "message")]
+        public string message;
+    }
+
+    [DataContract]
+    public class PublicKeysCommand : AuthenticatedCommand
+    {
+        public PublicKeysCommand() : base("public_keys") { }
+
+        [DataMember(Name = "key_owners", EmitDefaultValue = false)]
+        public string[] key_owners;
+    }
+
+    [DataContract]
+    public class PublicKeyResponse : KeeperApiResponse
+    {
+        [DataMember(Name = "public_keys")]
+        public UserPublicKey[] PublicKeys { get; set; }
+    }
+
+    [DataContract]
+    public class TeamEnterpriseUserAddCommand : AuthenticatedCommand
+    {
+        public TeamEnterpriseUserAddCommand(): base("team_enterprise_user_add")
+        {
+        }
+
+        [DataMember(Name = "team_uid")]
+        public string TeamUid { get; set; }
+
+        [DataMember(Name = "enterprise_user_id")]
+        public long EnterpriseUserId { get; set; }
+
+        [DataMember(Name = "user_type")]
+        public int UserType { get; set; }
+
+        [DataMember(Name = "team_key", EmitDefaultValue = false)]
+        public string TeamKey { get; set; }
+    }
+
 }
