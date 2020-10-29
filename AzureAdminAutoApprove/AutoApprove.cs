@@ -43,8 +43,16 @@ namespace AzureAdminAutoApprove
         {
             log.LogInformation($"ApproveQueuedTeamsByTimer trigger executed at: {DateTime.Now}");
 
-            var auth = await ApproveUtils.ConnectToKeeper(log, false);
-            await ApproveUtils.ExecuteTeamApprove(auth);
+            try
+            {
+                var auth = await ApproveUtils.ConnectToKeeper(log, false);
+                await ApproveUtils.ExecuteTeamApprove(auth);
+            }
+            catch (Exception e)
+            {
+                log.LogError(e, "ApproveQueuedTeamsByTimer");
+            }
+
         }
 
         [FunctionName("DumpPendingMessages")]

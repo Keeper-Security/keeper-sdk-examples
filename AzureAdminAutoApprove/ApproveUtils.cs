@@ -212,7 +212,7 @@ namespace AzureAdminAutoApprove
                     {
                         var teamKeyRq = new TeamGetKeysCommand
                         {
-                            teams = teams.Take(90).ToArray()
+                            teams = tgk
                         };
                         var teamKeyRs = await auth.ExecuteAuthCommand<TeamGetKeysCommand, TeamGetKeysResponse>(teamKeyRq);
                         if (teamKeyRs.TeamKeys?.Length > 0)
