@@ -1,41 +1,53 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+using KeeperSecurity.Sdk;
 using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Extensions.Http;
 using Microsoft.Extensions.Logging;
 
 namespace AzureAdminAutoApprove
 {
     public static class AutoApprove
     {
-        /*
-        [FunctionName("DebugInfo")]
-        public static Task<IActionResult> DebugInfo(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = null)]
-            HttpRequest req,
-            ILogger log)
-        {
-            var path = ApproveUtils.GetKeeperConfigurationFilePath();
-            var attr = System.IO.File.GetAttributes(path);
-            if ((attr & FileAttributes.Directory) != 0)
-            {
-                Directory.Delete(path);
-            }
-            return Task.FromResult<IActionResult>(new OkResult());
-        }
-        */
         [FunctionName("ApprovePendingRequestsByTimer")]
-        public static async Task RunApprovePendingRequests([TimerTrigger("0 */1 * * * *")] TimerInfo myTimer, ILogger log)
+        public static async Task RunApprovePendingRequests([TimerTrigger("0 */1 * * * *")]
+            TimerInfo myTimer,
+            ILogger log)
         {
             log.LogInformation($"ApprovePendingRequestsByTimer trigger executed at: {DateTime.Now}");
 
-            var auth = await ApproveUtils.ConnectToKeeper(log, true);
-            auth.AuthContext.PushNotifications.RegisterCallback(ApproveUtils.NotificationCallback);
-            await ApproveUtils.ExecuteDeviceApprove(auth);
+            var messages = new List<string>();
+            using var auth = await ApproveUtils.ConnectToKeeper(log);
 
+            bool Callback(NotificationEvent evt)
+            {
+                if (string.Compare(evt.Event, "request_device_admin_approval", StringComparison.InvariantCultureIgnoreCase) != 0) return false;
+                log.LogInformation($"Received admin approval request for {evt.Email} at {evt.IPAddress}");
+
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        await ApproveUtils.ExecuteDeviceApprove(auth, messages);
+                    }
+                    catch (Exception e)
+                    {
+                        messages.Add(e.Message);
+                    }
+                });
+
+                return false;
+            }
+
+            await ApproveUtils.ExecuteDeviceApprove(auth, messages);
+            auth.PushNotifications.RegisterCallback(Callback);
             await Task.Delay(TimeSpan.FromSeconds(30));
+            auth.PushNotifications.RemoveCallback(Callback);
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            foreach (var message in messages)
+            {
+                log.LogWarning(message);
+            }
         }
 
         [FunctionName("ApproveQueuedTeamsByTimer")]
@@ -43,10 +55,11 @@ namespace AzureAdminAutoApprove
         {
             log.LogInformation($"ApproveQueuedTeamsByTimer trigger executed at: {DateTime.Now}");
 
+            using var auth = await ApproveUtils.ConnectToKeeper(log);
+
             try
             {
-                var auth = await ApproveUtils.ConnectToKeeper(log, false);
-                await ApproveUtils.ExecuteTeamApprove(auth);
+                await ApproveUtils.ExecuteTeamApprove(auth, log);
             }
             catch (Exception e)
             {
@@ -54,7 +67,7 @@ namespace AzureAdminAutoApprove
             }
 
         }
-
+        /*
         [FunctionName("DumpPendingMessages")]
         public static Task<IActionResult> RunDumpPendingMessages(
             [HttpTrigger(AuthorizationLevel.Function, "get", Route = null)]
@@ -77,5 +90,6 @@ namespace AzureAdminAutoApprove
 
             return Task.FromResult<IActionResult>( new OkObjectResult("Success"));
         }
+        */
     }
 }

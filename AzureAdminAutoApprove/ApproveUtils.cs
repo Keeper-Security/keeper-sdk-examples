@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -17,15 +17,12 @@ namespace AzureAdminAutoApprove
 {
     internal static class ApproveUtils
     {
-        private static Auth _auth;
         private static ECPrivateKeyParameters _enterprisePrivateKey;
 
         static ApproveUtils()
         {
-            _auth = null;
             _enterprisePrivateKey = null;
         }
-
 
         public static string GetHomeFolder()
         {
@@ -45,39 +42,6 @@ namespace AzureAdminAutoApprove
 
         private static readonly SemaphoreSlim Semaphore = new SemaphoreSlim(1);
 
-        public static bool NotificationCallback(NotificationEvent evt)
-        {
-            if (string.Compare(evt.Event, "request_device_admin_approval", StringComparison.InvariantCultureIgnoreCase) != 0) return false;
-            Errors.Add("Received admin approval request");
-            Task.Run(async () =>
-            {
-                try
-                {
-                    Auth auth;
-                    if (!await Semaphore.WaitAsync(TimeSpan.FromSeconds(2))) throw new Exception("Timed out");
-                    try
-                    {
-                        auth = _auth;
-                        if (auth == null || !auth.IsAuthenticated())
-                        {
-                            Errors.Add("Not connected to Keeper");
-                            return;
-                        }
-                    }
-                    finally
-                    {
-                        Semaphore.Release();
-                    }
-
-                    await ExecuteDeviceApprove(auth);
-                }
-                catch (Exception e)
-                {
-                    Errors.Add($"Process request error: {e.Message}");
-                }
-            });
-            return false;
-        }
 
         private static async Task<List<KeeperApiResponse>> ExecuteCommands(this IAuthentication auth, IReadOnlyCollection<KeeperApiCommand> commands)
         {
@@ -104,19 +68,19 @@ namespace AzureAdminAutoApprove
             return responses;
         }
 
-        public static async Task ExecuteTeamApprove(Auth auth)
+        public static async Task ExecuteTeamApprove(Auth auth, ILogger log)
         {
             var teamRq = new EnterpriseDataCommand
             {
                 include = new[] {"queued_teams"}
             };
-            var teamRs = await _auth.ExecuteAuthCommand<EnterpriseDataCommand, EnterpriseDataResponse>(teamRq);
+            var teamRs = await auth.ExecuteAuthCommand<EnterpriseDataCommand, EnterpriseDataResponse>(teamRq);
 
             var encTreeKey = teamRs.TreeKey.Base64UrlDecode();
             var treeKey = teamRs.KeyTypeId switch
             {
-                1 => CryptoUtils.DecryptAesV1(encTreeKey, _auth.AuthContext.DataKey),
-                2 => CryptoUtils.DecryptRsa(encTreeKey, _auth.AuthContext.PrivateKey),
+                1 => CryptoUtils.DecryptAesV1(encTreeKey, auth.AuthContext.DataKey),
+                2 => CryptoUtils.DecryptRsa(encTreeKey, auth.AuthContext.PrivateKey),
                 _ => throw new Exception("cannot decrypt tree key")
             };
 
@@ -151,7 +115,7 @@ namespace AzureAdminAutoApprove
             {
                 include = new[] {"teams", "users", "queued_team_users"}
             };
-            var userRs = await _auth.ExecuteAuthCommand<EnterpriseDataCommand, EnterpriseDataResponse>(userRq);
+            var userRs = await auth.ExecuteAuthCommand<EnterpriseDataCommand, EnterpriseDataResponse>(userRq);
             if (userRs.QueuedTeamUsers?.Count > 0)
             {
                 var userLookup = new Dictionary<long, EnterpriseUser>();
@@ -302,7 +266,7 @@ namespace AzureAdminAutoApprove
                             var l = rs.Last();
                             if (!l.IsSuccess)
                             {
-                                Errors.Add($"Add user to team error: {l.resultCode}");
+                                log.LogInformation($"Add user to team error: {l.resultCode}");
                             }
                         }
                     }
@@ -310,9 +274,7 @@ namespace AzureAdminAutoApprove
             }
         }
 
-        public static readonly ConcurrentBag<string> Errors = new ConcurrentBag<string>();
-
-        public static async Task ExecuteDeviceApprove(Auth auth)
+        public static async Task ExecuteDeviceApprove(IAuthentication auth, IList<string> messages)
         {
             var keysRq = new EnterpriseDataCommand
             {
@@ -336,7 +298,7 @@ namespace AzureAdminAutoApprove
             foreach (var key in dataKeyRs.Keys)
             {
                 if (key.UserEncryptedDataKey.IsEmpty) continue;
-                //if (KeyType.Ecc.CompareTo(key.KeyTypeId) == 0) { }
+                if (key.KeyTypeId != 2) continue;
                 try
                 {
                     var userDataKey = CryptoUtils.DecryptEc(key.UserEncryptedDataKey.ToByteArray(), _enterprisePrivateKey);
@@ -344,7 +306,7 @@ namespace AzureAdminAutoApprove
                 }
                 catch (Exception e)
                 {
-                    Errors.Add($"Data key decrypt error: {e.Message}");
+                    messages.Add($"Data key decrypt error: {e.Message}");
                 }
             }
 
@@ -371,46 +333,17 @@ namespace AzureAdminAutoApprove
             var approveRs = await auth.ExecuteAuthRest<ApproveUserDevicesRequest, ApproveUserDevicesResponse>("enterprise/approve_user_devices", approveDevicesRq);
             foreach (var deviceRs in approveRs.DeviceResponses)
             {
-                if (deviceRs.Failed)
-                {
-                    Errors.Add($"Data key approval failed: {deviceRs.EnterpriseUserId}: {deviceRs.Message}");
-                }
-                else
-                {
-                    Errors.Add($"Successfully approved: {deviceRs.EnterpriseUserId}");
-                }
+                var message = $"Approve device for {deviceRs.EnterpriseUserId} {(deviceRs.Failed ? "failed" : "succeeded")}";
+                Debug.WriteLine(message);
+                messages.Add(message);
             }
         }
 
-        public static async Task<Auth> ConnectToKeeper(ILogger log, bool reconnect)
+        public static async Task<Auth> ConnectToKeeper(ILogger log)
         {
             if (!await Semaphore.WaitAsync(TimeSpan.FromSeconds(10))) throw new Exception("Timed out");
             try
             {
-                if (_auth != null)
-                {
-                    if (_auth.IsAuthenticated())
-                    {
-                        if (reconnect)
-                        {
-                            _auth.AuthContext.PushNotifications.Shutdown();
-                        }
-                        else
-                        {
-                            try
-                            {
-                                await _auth.ExecuteAuthRest("keep_alive", null);
-                            }
-                            catch (Exception e)
-                            {
-                                log.LogWarning(e.Message);
-                            }
-                        }
-                    }
-
-                    _auth = null;
-                }
-
                 var configPath = GetKeeperConfigurationFilePath();
                 var jsonCache = new JsonConfigurationCache(new JsonConfigurationFileLoader(configPath));
                 var jsonConfiguration = new JsonConfigurationStorage(jsonCache);
@@ -441,13 +374,7 @@ namespace AzureAdminAutoApprove
 
                 var privateKeyData = CryptoUtils.DecryptAesV2(rs.Keys.EccEncryptedPrivateKey.Base64UrlDecode(), treeKey);
                 _enterprisePrivateKey = CryptoUtils.LoadPrivateEcKey(privateKeyData);
-                _auth = auth;
                 return auth;
-            }
-            catch
-            {
-                _auth = null;
-                throw;
             }
             finally
             {
