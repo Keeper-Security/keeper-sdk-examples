@@ -1,6 +1,6 @@
 ﻿using System.Collections.Generic;
 using System.Runtime.Serialization;
-using KeeperSecurity.Sdk;
+using KeeperSecurity.Commands;
 
 namespace AzureAdminAutoApprove
 {

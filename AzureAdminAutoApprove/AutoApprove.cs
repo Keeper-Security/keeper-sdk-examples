@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using KeeperSecurity.Sdk;
+using KeeperSecurity.Authentication;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Extensions.Logging;
 
@@ -18,7 +18,7 @@ namespace AzureAdminAutoApprove
 
             var messages = new List<string>();
             using var auth = await ApproveUtils.ConnectToKeeper(log);
-
+            var approveStep = 0;
             bool Callback(NotificationEvent evt)
             {
                 if (string.Compare(evt.Event, "request_device_admin_approval", StringComparison.InvariantCultureIgnoreCase) != 0) return false;
@@ -28,7 +28,16 @@ namespace AzureAdminAutoApprove
                 {
                     try
                     {
-                        await ApproveUtils.ExecuteDeviceApprove(auth, messages);
+                        var step = approveStep;
+                        if (step > 0)
+                        {
+                            if (step == 1)
+                            {
+                                await Task.Delay(TimeSpan.FromSeconds(5));
+                            }
+
+                            await ApproveUtils.ExecuteDeviceApprove(auth, messages);
+                        }
                     }
                     catch (Exception e)
                     {
@@ -38,12 +47,17 @@ namespace AzureAdminAutoApprove
 
                 return false;
             }
-
-            await ApproveUtils.ExecuteDeviceApprove(auth, messages);
             auth.PushNotifications.RegisterCallback(Callback);
+
+            await Task.Delay(TimeSpan.FromSeconds(5));
+            approveStep = 1;
+            await ApproveUtils.ExecuteDeviceApprove(auth, messages);
+            approveStep = 2;
+
             await Task.Delay(TimeSpan.FromSeconds(30));
             auth.PushNotifications.RemoveCallback(Callback);
             await Task.Delay(TimeSpan.FromSeconds(5));
+
             foreach (var message in messages)
             {
                 log.LogWarning(message);

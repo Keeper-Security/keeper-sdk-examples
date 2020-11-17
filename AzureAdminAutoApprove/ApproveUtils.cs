@@ -8,8 +8,10 @@ using System.Threading.Tasks;
 using Authentication;
 using Enterprise;
 using Google.Protobuf;
-using KeeperSecurity.Sdk;
-using KeeperSecurity.Sdk.UI;
+using KeeperSecurity.Authentication;
+using KeeperSecurity.Commands;
+using KeeperSecurity.Configuration;
+using KeeperSecurity.Utils;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Crypto.Parameters;
 
