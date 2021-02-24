@@ -12,6 +12,10 @@ Azure Function name is `ApprovePendingRequestsByTimer`. This function is configu
 
 ### Web Hook
  Azure Function name is `ApprovePendingRequestsByWebHook`. This function requires function level authorization URL.
+ Azure Function with name `KeeperConnectionGuard` should used along with the `ApprovePendingRequestsByWebHook`. 
+ It just connects to the Keeper server to keep the session alive. It is executed every 12 hours, so make sure 
+ the `Auto Logout` timeout for the Keeper accont is set to at least a day (or 1440 minutes)
+
 
 ### Instructions
 See full installation instructions at our documentation portal:

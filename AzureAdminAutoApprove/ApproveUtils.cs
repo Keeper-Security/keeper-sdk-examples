@@ -9,6 +9,7 @@ using Authentication;
 using Enterprise;
 using Google.Protobuf;
 using KeeperSecurity.Authentication;
+using KeeperSecurity.Authentication.Sync;
 using KeeperSecurity.Commands;
 using KeeperSecurity.Configuration;
 using KeeperSecurity.Utils;
@@ -70,7 +71,7 @@ namespace AzureAdminAutoApprove
             return responses;
         }
 
-        public static async Task ExecuteTeamApprove(Auth auth, ILogger log)
+        public static async Task ExecuteTeamApprove(AuthCommon auth, ILogger log)
         {
             var teamRq = new EnterpriseDataCommand
             {
@@ -110,7 +111,7 @@ namespace AzureAdminAutoApprove
                     commands.Add(cmd);
                 }
 
-                var responses = await auth.ExecuteCommands(commands);
+                await auth.ExecuteCommands(commands);
             }
 
             var userRq = new EnterpriseDataCommand
@@ -208,7 +209,7 @@ namespace AzureAdminAutoApprove
 
                     var userKeys = new Dictionary<string, byte[]>(StringComparer.InvariantCultureIgnoreCase);
                     var emails = usersToApprove
-                        .Select(x => userLookup.TryGetValue(x, out var u) ? u : null )
+                        .Select(x => userLookup.TryGetValue(x, out var u) ? u : null)
                         .Where(x => x != null)
                         .Select(x => x.Username)
                         .Take(99)
@@ -285,39 +286,47 @@ namespace AzureAdminAutoApprove
             var rs = await auth.ExecuteAuthCommand<EnterpriseDataCommand, EnterpriseDataResponse>(keysRq);
             if ((rs.DeviceRequestForApproval?.Count ?? 0) == 0) return;
 
+            var userIds = new HashSet<long>();
+            foreach (var drq in rs.DeviceRequestForApproval)
+            {
+                if (!userIds.Contains(drq.EnterpriseUserId))
+                {
+                    userIds.Add(drq.EnterpriseUserId);
+                }
+            }
+
             var userDataKeys = new Dictionary<long, byte[]>();
-            foreach (var drq in rs.DeviceRequestForApproval)
+            while (userIds.Count > 0)
             {
-                if (!userDataKeys.ContainsKey(drq.EnterpriseUserId))
+                var ids = userIds.Take(100).ToArray();
+                userIds.ExceptWith(ids);
+
+                var dataKeyRq = new UserDataKeyRequest();
+                dataKeyRq.EnterpriseUserId.AddRange(ids);
+                var dataKeyRs = await auth.ExecuteAuthRest<UserDataKeyRequest, EnterpriseUserDataKeys>("enterprise/get_enterprise_user_data_key", dataKeyRq);
+                foreach (var key in dataKeyRs.Keys)
                 {
-                    userDataKeys[drq.EnterpriseUserId] = null;
+                    if (key.UserEncryptedDataKey.IsEmpty) continue;
+                    if (key.KeyTypeId != 2) continue;
+                    try
+                    {
+                        var userDataKey = CryptoUtils.DecryptEc(key.UserEncryptedDataKey.ToByteArray(), _enterprisePrivateKey);
+                        userDataKeys[key.EnterpriseUserId] = userDataKey;
+                    }
+                    catch (Exception e)
+                    {
+                        messages.Add($"Data key decrypt error: {e.Message}");
+                    }
                 }
             }
 
-            var dataKeyRq = new UserDataKeyRequest();
-            dataKeyRq.EnterpriseUserId.AddRange(userDataKeys.Keys);
-            var dataKeyRs = await auth.ExecuteAuthRest<UserDataKeyRequest, EnterpriseUserDataKeys>("enterprise/get_enterprise_user_data_key", dataKeyRq);
-            foreach (var key in dataKeyRs.Keys)
-            {
-                if (key.UserEncryptedDataKey.IsEmpty) continue;
-                if (key.KeyTypeId != 2) continue;
-                try
-                {
-                    var userDataKey = CryptoUtils.DecryptEc(key.UserEncryptedDataKey.ToByteArray(), _enterprisePrivateKey);
-                    userDataKeys[key.EnterpriseUserId] = userDataKey;
-                }
-                catch (Exception e)
-                {
-                    messages.Add($"Data key decrypt error: {e.Message}");
-                }
-            }
 
-            var approveDevicesRq = new ApproveUserDevicesRequest();
+            var requests = new Queue<ApproveUserDeviceRequest>();
             foreach (var drq in rs.DeviceRequestForApproval)
             {
-                if (!userDataKeys.ContainsKey(drq.EnterpriseUserId) || userDataKeys[drq.EnterpriseUserId] == null) continue;
+                if (!userDataKeys.TryGetValue(drq.EnterpriseUserId, out var dataKey)) continue;
+                if (dataKey == null) continue;
 
-                var dataKey = userDataKeys[drq.EnterpriseUserId];
                 var devicePublicKey = CryptoUtils.LoadPublicEcKey(drq.DevicePublicKey.Base64UrlDecode());
                 var encDataKey = CryptoUtils.EncryptEc(dataKey, devicePublicKey);
                 var approveRq = new ApproveUserDeviceRequest
@@ -327,21 +336,28 @@ namespace AzureAdminAutoApprove
                     EncryptedDeviceDataKey = ByteString.CopyFrom(encDataKey),
                     DenyApproval = false,
                 };
-                approveDevicesRq.DeviceRequests.Add(approveRq);
+                requests.Enqueue(approveRq);
             }
 
-            if (approveDevicesRq.DeviceRequests.Count == 0) return;
-
-            var approveRs = await auth.ExecuteAuthRest<ApproveUserDevicesRequest, ApproveUserDevicesResponse>("enterprise/approve_user_devices", approveDevicesRq);
-            foreach (var deviceRs in approveRs.DeviceResponses)
+            while (requests.Count > 0)
             {
-                var message = $"Approve device for {deviceRs.EnterpriseUserId} {(deviceRs.Failed ? "failed" : "succeeded")}";
-                Debug.WriteLine(message);
-                messages.Add(message);
+                var approveDevicesRq = new ApproveUserDevicesRequest();
+                while (requests.Count > 0 && approveDevicesRq.DeviceRequests.Count < 100)
+                {
+                    approveDevicesRq.DeviceRequests.Add(requests.Dequeue());
+                }
+
+                var approveRs = await auth.ExecuteAuthRest<ApproveUserDevicesRequest, ApproveUserDevicesResponse>("enterprise/approve_user_devices", approveDevicesRq);
+                foreach (var deviceRs in approveRs.DeviceResponses)
+                {
+                    var message = $"Approve device for {deviceRs.EnterpriseUserId} {(deviceRs.Failed ? "failed" : "succeeded")}";
+                    Debug.WriteLine(message);
+                    messages.Add(message);
+                }
             }
         }
 
-        public static async Task<Auth> ConnectToKeeper(ILogger log)
+        public static async Task<AuthCommon> ConnectToKeeper(ILogger log)
         {
             if (!await Semaphore.WaitAsync(TimeSpan.FromSeconds(10))) throw new Exception("Timed out");
             try
@@ -349,12 +365,18 @@ namespace AzureAdminAutoApprove
                 var configPath = GetKeeperConfigurationFilePath();
                 var jsonCache = new JsonConfigurationCache(new JsonConfigurationFileLoader(configPath));
                 var jsonConfiguration = new JsonConfigurationStorage(jsonCache);
-                var auth = new Auth(new AuthUiNoAction(), jsonConfiguration)
+                var auth = new AuthSync(jsonConfiguration)
                 {
-                    ResumeSession = true
+                    ResumeSession = true,
+                    SupportRestrictedSession = true,
                 };
                 await auth.Login(jsonConfiguration.LastLogin);
-                jsonCache.Flush();
+                if (auth.Step.State != AuthState.Connected)
+                {
+                    throw new Exception($"Unexpected login state: {auth.Step.State}. Configuration file may need to be updated.");
+                }
+
+                jsonConfiguration.Flush();
 
                 var keysRq = new EnterpriseDataCommand
                 {
@@ -384,22 +406,5 @@ namespace AzureAdminAutoApprove
             }
         }
     }
-
-    internal class AuthUiNoAction : IAuthUI
-    {
-        public Task<bool> WaitForDeviceApproval(IDeviceApprovalChannelInfo[] channels, CancellationToken token)
-        {
-            return Task.FromResult(false);
-        }
-
-        public Task<bool> WaitForTwoFactorCode(ITwoFactorChannelInfo[] channels, CancellationToken token)
-        {
-            return Task.FromResult(false);
-        }
-
-        public Task<bool> WaitForUserPassword(IPasswordInfo passwordInfo, CancellationToken token)
-        {
-            return Task.FromResult(false);
-        }
-    }
 }
+
