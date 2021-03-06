@@ -14,10 +14,9 @@ namespace AzureAdminAutoApprove
 {
     public static class AutoApprove
     {
-
         [FunctionName("KeeperConnectionGuard")]
         public static async Task KeeperConnectionGuard(
-            [TimerTrigger("12 12 */12 * * *")]
+            [TimerTrigger("30 10 0/6 * * *")]
             TimerInfo myTimer,
             ILogger log)
         {
@@ -76,6 +75,13 @@ namespace AzureAdminAutoApprove
             foreach (var message in messages)
             {
                 log.LogWarning(message);
+            }
+
+            var timeout = auth.AuthContext.Settings.LogoutTimerInSec ?? TimeSpan.FromMinutes(30).TotalSeconds;
+            if (timeout <= TimeSpan.FromHours(6).TotalSeconds)
+            {
+                await auth.SetSessionInactivityTimeout((int) TimeSpan.FromHours(12).TotalMinutes);
+                log.LogInformation("Logout timeout is set to 12 hours");
             }
 
             return new OkResult();
