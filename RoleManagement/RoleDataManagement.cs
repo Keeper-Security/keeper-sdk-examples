@@ -8,6 +8,8 @@ using System;
 using System.Diagnostics;
 using Google.Protobuf;
 using KeeperSecurity.Enterprise;
+using System.Runtime.Serialization;
+using System.Text;
 
 namespace Sample
 {
@@ -21,6 +23,9 @@ namespace Sample
         Task RemoveUserFromRole(long roleId, long userId);
         Task AddTeamToRole(long roleId, string teamUid);
         Task RemoveTeamFromRole(long roleId, string teamUid);
+        Task AddRoleEnforcement(long roleId, string name, object value);
+        Task DeleteRoleEnforcement(long roleId, string name);
+        Task CopyRole(long roleId, long nodeId, Action<string> errors);
     }
 
     public class RoleDataManagement : RoleData, IRoleDataManagement
@@ -124,7 +129,7 @@ namespace Sample
             return TryGetRole(roleId, out var role) ? role : null;
         }
 
-        public async Task DeleteRole(long roleId) 
+        public async Task DeleteRole(long roleId)
         {
             await Enterprise.Auth.ExecuteAuthCommand(new RoleDeleteCommand { RoleId = roleId }); ;
             await Enterprise.Load();
@@ -172,10 +177,11 @@ namespace Sample
             await Enterprise.Load();
         }
 
-        public async Task AddTeamToRole(long roleId, string teamUid) {
+        public async Task AddTeamToRole(long roleId, string teamUid)
+        {
             var rq = new RoleTeams();
-            rq.RoleTeam.Add(new RoleTeam 
-            { 
+            rq.RoleTeam.Add(new RoleTeam
+            {
                 RoleId = roleId,
                 TeamUid = ByteString.CopyFrom(teamUid.Base64UrlDecode()),
             });
@@ -184,7 +190,7 @@ namespace Sample
             await Enterprise.Load();
         }
 
-        public async Task RemoveTeamFromRole(long roleId, string teamUid) 
+        public async Task RemoveTeamFromRole(long roleId, string teamUid)
         {
             var rq = new RoleTeams();
             rq.RoleTeam.Add(new RoleTeam
@@ -195,6 +201,120 @@ namespace Sample
 
             await Enterprise.Auth.ExecuteAuthRest("enterprise/role_team_remove", rq);
             await Enterprise.Load();
+        }
+
+
+        public async Task AddRoleEnforcement(long roleId, string name, object value)
+        {
+            AuthenticatedCommand rq;
+            switch (value)
+            {
+                case Dictionary<string, object> dict:
+                    rq = new RoleEnforcementAddJsonCommand
+                    {
+                        RoleId = roleId,
+                        Enforcement = name,
+                        Value = dict
+                    };
+                    break;
+
+                case bool b:
+                    if (b)
+                    {
+                        rq = new RoleEnforcementAddBoolCommand
+                        {
+                            RoleId = roleId,
+                            Enforcement = name,
+                        };
+                    }
+                    else
+                    {
+                        await DeleteRoleEnforcement(roleId, name);
+                        return;
+                    }
+                    break;
+
+                default:
+                    rq = new RoleEnforcementAddCommand
+                    {
+                        RoleId = roleId,
+                        Enforcement = name,
+                        Value = value.ToString()
+                    };
+                    break;
+            }
+
+            await Enterprise.Auth.ExecuteAuthCommand(rq);
+        }
+
+        public async Task DeleteRoleEnforcement(long roleId, string name)
+        {
+            var rq = new RoleEnforcementRemoveCommand
+            {
+                RoleId = roleId,
+                Enforcement = name,
+            };
+            await Enterprise.Auth.ExecuteAuthCommand(rq);
+        }
+
+
+        public async Task CopyRole(long roleId, long nodeId, Action<string> errors)
+        {
+            if (!TryGetRole(roleId, out var role))
+            {
+                throw new Exception($"Role ID {roleId} not found.");
+            }
+
+            if (role.Id == nodeId)
+            {
+                throw new Exception($"Role ID {roleId} already belongs to Node ID {nodeId}.");
+            }
+
+            var newRole = await CreateRole(role.DisplayName, nodeId, role.VisibleBelow, role.NewUserInherit);
+            var enforcements = GetEnforcementsForRole(roleId);
+            foreach (var enforcement in enforcements)
+            {
+                try
+                {
+                    object objectValue = null;
+                    if (enforcement.Value == "true" || enforcement.Value == "false")
+                    {
+                        objectValue = enforcement.Value == "true";
+                    }
+                    else if (enforcement.Value.Length >= 2 && enforcement.Value[0] == '{' && enforcement.Value[enforcement.Value.Length - 1] == '}')
+                    {
+                        objectValue = JsonUtils.ParseJson<Dictionary<string, object>>(Encoding.UTF8.GetBytes(enforcement.Value));
+                    }
+                    else
+                    {
+                        objectValue = enforcement.Value;
+                    }
+                    await AddRoleEnforcement(newRole.Id, enforcement.EnforcementType, objectValue);
+                }
+                catch (Exception e)
+                {
+                    errors?.Invoke($"{enforcement.EnforcementType}: {e.Message}");
+                }
+            }
+        }
+    }
+
+    [DataContract]
+    public class RoleEnforcementAddJsonCommand : RoleEnforcementCommand
+    {
+        public RoleEnforcementAddJsonCommand() : base("role_enforcement_add")
+        {
+        }
+
+        [DataMember(Name = "value")]
+        public Dictionary<string, object> Value { get; set; }
+    }
+
+    [DataContract]
+    public class RoleEnforcementAddBoolCommand : RoleEnforcementCommand
+    {
+        public RoleEnforcementAddBoolCommand() : base("role_enforcement_add")
+        {
         }
     }
 }

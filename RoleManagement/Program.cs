@@ -10,6 +10,7 @@
 //
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using KeeperSecurity.Authentication;
@@ -36,6 +37,7 @@ namespace Sample
 4. Create Node
 5. Toggle Node Isolation
 6. Assign User to Role
+7. Copy Role to another Node
 Q. Quit
 ";
 
@@ -58,9 +60,8 @@ Q. Quit
             Console.WriteLine($"Connecting to Keeper as {email}");
             using var auth = new Auth(new ConsoleAuthUi(GetInputManager()), configuration)
             {
-                Endpoint = { DeviceName = "LPL Sanple" }
+                Endpoint = { DeviceName = "SDK Sample" }
             };
-            auth.Endpoint.Server = "dev.keepersecurity.com";
 
             await auth.Login(email);
             if (!auth.IsAuthenticated())
@@ -183,17 +184,17 @@ Q. Quit
                                         {
                                             Console.WriteLine($"Parent node ID \"{answer}\" not found.");
                                         }
-                                        else if (ReferenceEquals(nd, enterpriseData.RootNode)) 
+                                        else if (ReferenceEquals(nd, enterpriseData.RootNode))
                                         {
                                             Console.WriteLine($"Cannot change Node Isolation on the Root node.");
                                         }
-                                        else 
+                                        else
                                         {
                                             node = nd;
                                         }
                                     }
                                 }
-                                if (node != null) 
+                                if (node != null)
                                 {
                                     try
                                     {
@@ -229,12 +230,12 @@ Q. Quit
                                     if (role == null)
                                     {
                                         Console.WriteLine($"Role \"{answer}\" not found.");
-                                        return;
+                                        break;
                                     }
                                 }
                                 else
                                 {
-                                    return;
+                                    break;
                                 }
                                 Console.WriteLine($"Current role:\nRole ID: {role.Id}\nRole Name: {role.DisplayName}");
 
@@ -254,18 +255,105 @@ Q. Quit
                                     if (user == null)
                                     {
                                         Console.WriteLine($"User \"{answer}\" not found.");
-                                        return;
+                                        break;
                                     }
                                 }
                                 else
                                 {
-                                    return;
+                                    break;
                                 }
                                 Console.WriteLine($"\nUser ID: {user.Id}\nEmail: {user.Email}");
 
                                 await roleData.AddUserToRole(role.Id, user.Id);
 
                                 Console.WriteLine($"User \"{user.Email}\" added to role \"{role.DisplayName}\"");
+                            }
+                            break;
+
+                        case 7:
+                            {
+                                EnterpriseRole role = null;
+                                Console.Write("Enter Role ID or Role Name: ");
+                                answer = await GetInputManager().ReadLine();
+                                long id;
+                                if (!string.IsNullOrEmpty(answer))
+                                {
+                                    if (long.TryParse(answer, out id))
+                                    {
+                                        roleData.TryGetRole(id, out role);
+                                    }
+                                    if (role == null)
+                                    {
+                                        role = roleData.Roles.FirstOrDefault(x => string.Equals(x.DisplayName, answer, StringComparison.CurrentCultureIgnoreCase));
+                                    }
+                                    if (role == null)
+                                    {
+                                        Console.WriteLine($"Role \"{answer}\" not found.");
+                                        break;
+                                    }
+                                }
+                                else
+                                {
+                                    break;
+                                }
+                                Console.WriteLine($"Current role:\nRole ID: {role.Id}\nRole Name: {role.DisplayName}");
+
+                                EnterpriseNode node = null;
+                                Console.Write("Enter the target Node ID or Node Name: ");
+                                answer = await GetInputManager().ReadLine();
+                                if (!string.IsNullOrEmpty(answer))
+                                {
+                                    if (long.TryParse(answer, out id))
+                                    {
+                                        enterpriseData.TryGetNode(id, out node);
+                                    }
+                                    if (node == null)
+                                    {
+                                        node = enterpriseData.Nodes.FirstOrDefault(x => string.Equals(x.DisplayName, answer, StringComparison.CurrentCultureIgnoreCase));
+                                    }
+                                    if (node == null)
+                                    {
+                                        Console.WriteLine($"Node \"{answer}\" not found.");
+                                        break;
+                                    }
+                                }
+                                else
+                                {
+                                    break;
+                                }
+
+                                foreach (var r in roleData.Roles)
+                                {
+                                    if (r.ParentNodeId == node.Id && string.Equals(r.DisplayName, role.DisplayName, StringComparison.InvariantCultureIgnoreCase))
+                                    {
+                                        Console.WriteLine($"Node \"{node.DisplayName}\" already has a role with name \"{role.DisplayName}\"");
+                                        node = null;
+                                        break;
+                                    }
+                                }
+                                if (node == null)
+                                {
+                                    break;
+                                }
+
+                                Console.WriteLine($"Target node:\nNode ID: {node.Id}\nNode Name: {node.DisplayName}");
+                                var errors = new List<string>();
+
+                                await roleData.CopyRole(role.Id, node.Id, s =>
+                                {
+                                    errors.Add(s);
+                                });
+
+                                Console.WriteLine($"Role \"{role.DisplayName}\" has been copied to node \"{node.DisplayName}\"");
+                                if (errors.Count > 0)
+                                {
+                                    Console.WriteLine("Failed to copy the following enforcements:");
+                                    foreach (var e in errors)
+                                    {
+                                        Console.WriteLine(e);
+                                    }
+                                }
+
                             }
                             break;
                     }
@@ -301,7 +389,5 @@ Q. Quit
 
             InputManager.Run();
         }
-
     }
-
 }
