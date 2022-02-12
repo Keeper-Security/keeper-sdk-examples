@@ -1,8 +1,16 @@
 # keeper-sdk-examples
 
-The collection of applications using the Keeper Commander SDK
+The collection of example apps using the Keeper Commander .Net SDK.
 
-### Applications
+### Examples
 
-* [Auto Approve Admin Requests](https://github.com/Keeper-Security/keeper-sdk-examples/tree/main/AzureAdminAutoApprove) Azure Function that automatically approves all Keeper SSO Connect Cloud device requests.
+[Auto Approve Admin Approvals](https://github.com/Keeper-Security/keeper-sdk-examples/tree/main/AzureAdminAutoApprove) Azure Function that automatically approves all Keeper SSO Connect Cloud device requests.
 
+### Documentation
+[Secrets Manager Guide](https://docs.keeper.io/secrets-manager/secrets-manager/overview)
+
+[Enterprise Admin Guide](https://docs.keeper.io/enterprise-guide/)
+
+[Keeper Commander Guide](https://docs.keeper.io/secrets-manager/commander-cli/overview)
+
+[Keeper Security Website](https://www.keepersecurity.com/secrets-manager.html)
