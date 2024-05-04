@@ -32,7 +32,7 @@ namespace Sample
     {
         private Dictionary<long, byte[]> _adminRoleKeys = new Dictionary<long, byte[]>();
 
-        private async Task<byte[]> GetRoleKey(long roleId)
+        private new async Task<byte[]> GetRoleKey(long roleId)
         {
             lock (_adminRoleKeys)
             {
@@ -81,7 +81,7 @@ namespace Sample
                                 roleKey = CryptoUtils.DecryptAesV1(rKey.EncryptedKey.Base64UrlDecode(), Enterprise.Auth.AuthContext.DataKey);
                                 break;
                             case EncryptedKeyType.KtEncryptedByPublicKey:
-                                roleKey = CryptoUtils.DecryptRsa(rKey.EncryptedKey.Base64UrlDecode(), Enterprise.Auth.AuthContext.PrivateKey);
+                                roleKey = CryptoUtils.DecryptRsa(rKey.EncryptedKey.Base64UrlDecode(), Enterprise.Auth.AuthContext.PrivateRsaKey);
                                 break;
                         }
                     }

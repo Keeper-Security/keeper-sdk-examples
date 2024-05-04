@@ -13,11 +13,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Cli;
+using Cli.Async;
 using KeeperSecurity.Authentication;
 using KeeperSecurity.Authentication.Async;
 using KeeperSecurity.Configuration;
 using KeeperSecurity.Enterprise;
-using KeeperSecurity.Utils;
 
 namespace Sample
 {

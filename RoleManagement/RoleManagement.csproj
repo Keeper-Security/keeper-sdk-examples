@@ -2,12 +2,13 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net5.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="CommandLineParser" Version="2.9.0-preview1" />
-    <PackageReference Include="Keeper.Sdk" Version="1.0.2-beta03" />
+    <PackageReference Include="CommandLineParser" Version="2.9.1" />
+    <PackageReference Include="Keeper.Cli" Version="1.0.3" />
+    <PackageReference Include="Keeper.Sdk" Version="1.0.5-beta19" />
   </ItemGroup>
 
 </Project>
